@@ -1,0 +1,11 @@
+[package]
+name = "arm64-test"
+version = "0.1.0"
+edition = "2021"
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "my_benchmark"
+harness = false

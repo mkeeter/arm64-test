@@ -9,3 +9,19 @@ criterion = "0.3"
 [[bench]]
 name = "my_benchmark"
 harness = false
+
+[[bin]]
+name = "asm_matched"
+path = "src/bin/asm_matched.rs"
+
+[[bin]]
+name = "asm_mismatched"
+path = "src/bin/asm_mismatched.rs"
+
+[[bin]]
+name = "asm_mismatched_br"
+path = "src/bin/asm_mismatched_br.rs"
+
+[[bin]]
+name = "asm_branch"
+path = "src/bin/asm_branch.rs"

@@ -9,14 +9,41 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             sum_ptr(black_box(slice.as_ptr()), black_box(slice.len()))
         })
     });
-    c.bench_function("sum_ptr_asm", |b| {
+    c.bench_function("sum_ptr_asm_matched", |b| {
         b.iter(|| unsafe {
-            sum_ptr_asm(black_box(slice.as_ptr()), black_box(slice.len()))
+            sum_ptr_asm_matched(
+                black_box(slice.as_ptr()),
+                black_box(slice.len()),
+            )
         })
     });
-    c.bench_function("sum_ptr_asm2", |b| {
+    c.bench_function("sum_ptr_asm_mismatched", |b| {
         b.iter(|| unsafe {
-            sum_ptr_asm2(black_box(slice.as_ptr()), black_box(slice.len()))
+            sum_ptr_asm_mismatched(
+                black_box(slice.as_ptr()),
+                black_box(slice.len()),
+            )
+        })
+    });
+    c.bench_function("sum_ptr_asm_mismatched_br", |b| {
+        b.iter(|| unsafe {
+            sum_ptr_asm_mismatched_br(
+                black_box(slice.as_ptr()),
+                black_box(slice.len()),
+            )
+        })
+    });
+    c.bench_function("sum_ptr_asm_branch", |b| {
+        b.iter(|| unsafe {
+            sum_ptr_asm_branch(
+                black_box(slice.as_ptr()),
+                black_box(slice.len()),
+            )
+        })
+    });
+    c.bench_function("sum_ptr_asm_simd", |b| {
+        b.iter(|| unsafe {
+            sum_ptr_asm_simd(black_box(slice.as_ptr()), black_box(slice.len()))
         })
     });
 }

@@ -15,24 +15,20 @@ pub unsafe fn sum_ptr(f: *const f32, n: usize) -> f32 {
 }
 
 #[naked]
-pub unsafe extern "C" fn sum_ptr_asm(f: *const f32, n: usize) -> f32 {
+pub unsafe extern "C" fn sum_ptr_asm_matched(f: *const f32, n: usize) -> f32 {
     asm!(
         "
         stp   x29, x30, [sp, #-16]!
-
         fmov s0, #0.0
 
-        // Jump into setup
-        b 3f
-
-        2: // Jump into the body of the loop, setting the link register
-            bl 4f
-
-        3: // Setup: update pointers and break if we hit zero
+        // Setup
+        2:
             cmp x1, #0
             b.eq 5f // Jump to function exit
             sub x1, x1, #1
             ldr s1, [x0], #4
+
+            bl 4f
             b 2b
 
         4: // Body of the loop: do one addition, then jump back to setup
@@ -50,7 +46,10 @@ pub unsafe extern "C" fn sum_ptr_asm(f: *const f32, n: usize) -> f32 {
 }
 
 #[naked]
-pub unsafe extern "C" fn sum_ptr_asm2(f: *const f32, n: usize) -> f32 {
+pub unsafe extern "C" fn sum_ptr_asm_mismatched(
+    f: *const f32,
+    n: usize,
+) -> f32 {
     asm!(
         "
         stp   x29, x30, [sp, #-16]!
@@ -78,15 +77,140 @@ pub unsafe extern "C" fn sum_ptr_asm2(f: *const f32, n: usize) -> f32 {
     );
 }
 
+#[naked]
+pub unsafe extern "C" fn sum_ptr_asm_mismatched_br(
+    f: *const f32,
+    n: usize,
+) -> f32 {
+    asm!(
+        "
+        stp   x29, x30, [sp, #-16]!
+        fmov s0, #0.0
+
+        bl 3f // set link register to the next instruction
+
+        3:
+            cmp x1, #0
+            b.eq 5f // Jump to function exit
+            sub x1, x1, #1
+            ldr s1, [x0], #4
+
+            fadd s0, s0, s1
+            // In practice, there's an arbitrary amount of code here, which
+            // is why we use `bl` / `ret` instead of a fixed-size jump
+
+            br x30
+
+        5: // function exit
+            ldp   x29, x30, [sp], #16
+            ret
+    ",
+        options(noreturn)
+    );
+}
+
+#[naked]
+pub unsafe extern "C" fn sum_ptr_asm_branch(f: *const f32, n: usize) -> f32 {
+    asm!(
+        "
+        stp   x29, x30, [sp, #-16]!
+        fmov s0, #0.0
+
+        3:
+            subs x1, x1, #1
+            b.mi 5f
+            ldr s1, [x0], #4
+
+            fadd s0, s0, s1
+            b 3b
+
+        5: // function exit
+            ldp   x29, x30, [sp], #16
+            ret
+    ",
+        options(noreturn)
+    );
+}
+
+#[naked]
+pub unsafe extern "C" fn sum_ptr_asm_simd(f: *const f32, n: usize) -> f32 {
+    asm!(
+        "
+        stp   x29, x30, [sp, #-16]!
+
+        fmov s0, #0.0
+        dup v2.4s, v0.s[0]
+
+        2:  // 1x per loop
+            ands xzr, x1, #3
+            b.eq 3f
+
+            sub x1, x1, #1
+            ldr s1, [x0], #4
+
+            fadd s0, s0, s1
+            b 2b
+
+        3:  // 4x SIMD per loop
+            ands xzr, x1, #7
+            b.eq 4f
+
+            sub x1, x1, #4
+            ldp d3, d4, [x0], #16
+            mov v3.d[1], v4.d[0]
+
+            fadd v2.4s, v2.4s, v3.4s
+
+            b 3b
+
+        4:  // 2 x 4x SIMD per loop
+            cmp x1, #0
+            b.eq 5f // Jump to function exit
+
+            sub x1, x1, #8
+
+            ldp d3, d4, [x0], #16
+            mov v3.d[1], v4.d[0]
+            fadd v2.4s, v2.4s, v3.4s
+
+            ldp d3, d4, [x0], #16
+            mov v3.d[1], v4.d[0]
+            fadd v2.4s, v2.4s, v3.4s
+
+            b 4b
+
+        5: // function exit
+            mov s1, v2.s[0]
+            fadd s0, s0, s1
+            mov s1, v2.s[1]
+            fadd s0, s0, s1
+            mov s1, v2.s[2]
+            fadd s0, s0, s1
+            mov s1, v2.s[3]
+            fadd s0, s0, s1
+
+            ldp   x29, x30, [sp], #16
+            ret
+    ",
+        options(noreturn)
+    );
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     #[test]
     fn test_sums() {
-        let d = (0..1024).map(|i| i as f32).collect::<Vec<f32>>();
-        let v = sum_slice(&d);
-        assert_eq!(v, unsafe { sum_ptr(d.as_ptr(), d.len()) });
-        assert_eq!(v, unsafe { sum_ptr_asm(d.as_ptr(), d.len()) });
-        assert_eq!(v, unsafe { sum_ptr_asm2(d.as_ptr(), d.len()) });
+        for size in [0, 1, 2, 3, 1024, 1025] {
+            let d = (0..size).map(|i| i as f32).collect::<Vec<f32>>();
+            let v = sum_slice(&d);
+            let ptr = d.as_ptr();
+            let len = d.len();
+            assert_eq!(v, unsafe { sum_ptr(ptr, len) });
+            assert_eq!(v, unsafe { sum_ptr_asm_matched(ptr, len) });
+            assert_eq!(v, unsafe { sum_ptr_asm_mismatched(ptr, len) });
+            assert_eq!(v, unsafe { sum_ptr_asm_branch(ptr, len) });
+            assert_eq!(v, unsafe { sum_ptr_asm_simd(ptr, len) });
+        }
     }
 }
